@@ -13,8 +13,9 @@ from arguments import get_args
 
 # 1. Implement an Encoder, which gives it a line of input data and it returns you the tokenized result.
 class Encoder(object): 
-    def __init__(self, args):
+    def __init__(self, args, split=None):
         self.args = args
+        self.split = split
 
     def initializer(self):
         Encoder.tokenizer = AutoTokenizer.from_pretrained(self.args.model_path, padding_side="right")
@@ -53,6 +54,12 @@ class Encoder(object):
                 t_prompt_tokens = t_prompt_tokens[:self.args.t_max_prompt_length]
 
         
+        # a train row that does not fit is dropped instead of cut: cutting the prompt loses the assistant
+        # header and cutting at --max-length loses the end of the JSON. Test rows are never dropped.
+        if self.split != "test" and (len(prompt_tokens) > self.args.max_prompt_length or
+                                     len(prompt_tokens) + len(response_tokens) > self.args.max_length):
+            return line, prompt, None, response_tokens, t_prompt_tokens, len(line)
+
         if len(prompt_tokens) > self.args.max_prompt_length:
             prompt_tokens = prompt_tokens[:self.args.max_prompt_length]
             # return None, None, None, None, len(line)
@@ -86,7 +93,7 @@ def main():
     for split in all_data:
         
         # encoder use the tokenizer to encode data
-        encoder = Encoder(args)
+        encoder = Encoder(args, split)
 
         # 2. Mapping all datas with Encoder, with the help of multiprocessing
         pool = multiprocessing.Pool(processes=args.data_process_workers, initializer=encoder.initializer)
@@ -112,6 +119,7 @@ def main():
         print("#"*10, split, "#"*10)
         
         prompt_lens = []
+        dropped = 0
         response_lens = []
         
         json_file = open(os.path.join(args.processed_data_dir, f"{split}.jsonl"), "w")
@@ -119,6 +127,7 @@ def main():
         for lid, (line, prompt_str, prompt, response, t_prompt, bytes_processed) in enumerate(encoded_docs):
             total_bytes_processed += bytes_processed
             if prompt is None:
+                dropped += 1
                 continue
             
             if args.only_prompt:
@@ -137,10 +146,11 @@ def main():
                 
                 binary_builder.add_item(torch.IntTensor(prompt + [-1] + response))
 
-            json_file.write(json.dumps({
-                "prompt": prompt_str,
-                "response": line["response"],
-            }) + "\n")
+            rec = {"prompt": prompt_str, "response": line["response"]}
+            for k in ("dataset", "gold_eval"):  # general_domain rows: per-dataset sampling and scoring
+                if k in line:
+                    rec[k] = line[k]
+            json_file.write(json.dumps(rec) + "\n")
 
             prompt_lens.append(len(prompt))
             response_lens.append(len(response))
@@ -163,7 +173,7 @@ def main():
         pool.close()
         json_file.close()
                 
-        print("Data num", len(prompt_lens))
+        print("Data num", len(prompt_lens), "dropped (too long)", dropped)
         print("Prompt lengths.", "Mean:", np.mean(prompt_lens), "Max:", np.max(prompt_lens), "Min:", np.min(prompt_lens))
         print("Response", "Mean:", np.mean(response_lens), "Max:", np.max(response_lens), "Min:", np.min(response_lens))
 

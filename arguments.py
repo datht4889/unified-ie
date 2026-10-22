@@ -77,6 +77,11 @@ def add_data_args(parser: argparse.ArgumentParser):
     group.add_argument("--train-ratio", type=float, default=1)
     group.add_argument("--dev-num", type=int, default=-1)
     group.add_argument("--dev-ratio", type=float, default=1)
+    group.add_argument("--label-map", type=str, default=None,
+                       help="ee_label_map.tsv: score each source dataset in its own label scheme")
+    group.add_argument("--sample-alpha", type=float, default=None,
+                       help="draw train rows of dataset d with probability prop. to n_d**alpha (0.5 = temperature 2); "
+                            "one epoch stays len(train) rows")
     group.add_argument("--gen-num", type=int, default=-1)
     group.add_argument("--data-names", type=str, default=None)
     group.add_argument("--prompt-type", type=str, default=None)

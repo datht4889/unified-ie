@@ -1,3 +1,4 @@
+import csv
 import json
 from collections import Counter, defaultdict
 
@@ -183,3 +184,66 @@ def ed_evaluate(pred_list, gt_list):
         },
         "trigger_per_type": trigger_per_type_metrics,
     }
+
+# ---- per-dataset scoring for the merged label set (data/general_domain) ----
+
+def load_label_map(path):
+    """dataset -> {normalized merged label (v1 or v2 spelling): label in the dataset's own scheme}."""
+    label_map = defaultdict(dict)
+    with open(path, encoding="utf-8") as f:
+        for r in csv.DictReader(f, delimiter="\t"):
+            for col in ("label_v1", "label_v2"):
+                label_map[r["dataset"]][normalize(r[col])] = r["eval_label"]
+    return label_map
+
+def scheme_label(dataset, label):
+    # RAMS is scored on its 38 level-2 types
+    return ".".join(label.split(".")[:2]) if dataset == "rams" else label
+
+def role_key(role):
+    # v1 keeps the dataset's role names, v2 writes them in lowercase words
+    return normalize(role).replace("_", " ")
+
+def ed_evaluate_by_dataset(pred_list, rows, label_map):
+    """Score every dataset in its own label scheme. A predicted label is mapped back through label_map;
+    a label the row's dataset does not use is dropped, since that dataset never annotates it."""
+    counts = defaultdict(lambda: {k: {"tp": 0, "fp": 0, "fn": 0} for k in ("trigger", "trigger_id", "argument")})
+    has_args = set()
+    for pred_json, row in zip(pred_list, rows):
+        ds = row["dataset"]
+        m = label_map[ds]
+        gold_t, gold_a = set(), set()
+        for g in row["gold_eval"]:
+            t, label = normalize(g[0]), scheme_label(ds, g[1])
+            gold_t.add((t, label))
+            if len(g) > 2:
+                has_args.add(ds)
+                gold_a.update((t, label, normalize(a[0]), role_key(a[1])) for a in g[2])
+        pred_t, pred_a = set(), set()
+        for event in safe_load(pred_json).get("events", []):
+            try:
+                label = m.get(normalize(event[1]))
+                if label is None:
+                    continue
+                t, label = normalize(event[0]), scheme_label(ds, label)
+                pred_t.add((t, label))
+                if len(event) > 2 and isinstance(event[2], list):
+                    pred_a.update((t, label, normalize(a[0]), role_key(a[1])) for a in event[2])
+            except (TypeError, IndexError, AttributeError):
+                continue
+        update_counts(list(pred_t), list(gold_t), counts[ds]["trigger"])
+        update_counts(list({x[0] for x in pred_t}), list({x[0] for x in gold_t}), counts[ds]["trigger_id"])
+        update_counts(list(pred_a), list(gold_a), counts[ds]["argument"])
+
+    out = {}
+    for ds, c in sorted(counts.items()):
+        out[ds] = {}
+        for k in ("trigger", "trigger_id", "argument"):
+            if k == "argument" and ds not in has_args:
+                continue
+            p, r, f1 = compute_f1(c[k])
+            out[ds][k] = {"precision": p, "recall": r, "f1": f1, "counts": dict(c[k])}
+    out["macro_trigger_f1"] = sum(v["trigger"]["f1"] for v in out.values()) / max(1, len(counts))
+    if has_args:
+        out["macro_argument_f1"] = sum(out[ds]["argument"]["f1"] for ds in has_args) / len(has_args)
+    return out

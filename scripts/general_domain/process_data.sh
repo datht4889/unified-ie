@@ -1,14 +1,16 @@
 #! /bin/bash
-# usage: bash scripts/general_domain/process_data.sh v1|v2
-VERSION=${1:-v1}
+# usage: bash scripts/general_domain/process_data.sh ee_v1
+# DATA: folder under data/general_domain (ee_v1, ee_v2, ee_arg_v1, ee_arg_v2)
+DATA=${1:-ee_v1}
 
 export TF_CPP_MIN_LOG_LEVEL=3
 
 PYTHONPATH=. python3 ./tools/process_data.py \
-    --data-dir ./data/general_domain/ee_${VERSION}/ \
-    --processed-data-dir ./processed_data/general_domain/ee_${VERSION} \
+    --data-dir ./data/general_domain/${DATA}/ \
+    --processed-data-dir ./processed_data/general_domain/${DATA} \
     --model-path Qwen/Qwen3-0.6B \
     --data-process-workers 4 \
     --max-prompt-length 460 \
+    --max-length 768 \
     --dev-num 1000 \
     --model-type qwen

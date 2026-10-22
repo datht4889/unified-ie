@@ -28,7 +28,7 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 
 from arguments import get_args
 
-from data_utils.lm_datasets import LMTrainDataset
+from data_utils.lm_datasets import LMTrainDataset, TemperatureSampler
 from data_utils.data_utils import LLMDataset
 from utils import get_optimizer_params, get_optimizer_params_peft, print_args, initialize
 from utils import print_rank, get_rank
@@ -44,7 +44,7 @@ from distillm import SampleGenerator, ReplayBuffer
 from rouge_metric import compute_metrics
 
 from peft import PeftModel
-from ed_eval import ed_evaluate
+from ed_eval import ed_evaluate, ed_evaluate_by_dataset, load_label_map
 
 torch.set_num_threads(4)
 
@@ -455,7 +455,10 @@ def finetune(args, tokenizer: AutoTokenizer, model: deepspeed.DeepSpeedEngine, o
         dp_group = None
         loss_func = nn.CrossEntropyLoss()
 
-    sampler = DistributedSampler(dataset["train"], shuffle=True, drop_last=True, rank=dp_rank, num_replicas=dp_world_size)
+    if args.sample_alpha is not None:
+        sampler = TemperatureSampler(dataset["train"], args.sample_alpha, rank=dp_rank, num_replicas=dp_world_size, seed=args.seed)
+    else:
+        sampler = DistributedSampler(dataset["train"], shuffle=True, drop_last=True, rank=dp_rank, num_replicas=dp_world_size)
     train_dataloader = DataLoader(
         dataset['train'], sampler=sampler, batch_size=args.batch_size, num_workers=args.num_workers, collate_fn=dataset["train"].collate)
     
@@ -740,6 +743,7 @@ def evaluate(args, tokenizer, model, dataset: LMTrainDataset, split, epoch, devi
                 gen_out = model.generate(
                     **gen_data,
                     generation_config=generation_config,
+                    do_sample=args.do_sample,
                     max_new_tokens=max_new_tokens)
                 
                 full_ids = gen_out.sequences
@@ -774,6 +778,8 @@ def evaluate(args, tokenizer, model, dataset: LMTrainDataset, split, epoch, devi
 
             ed_metrics = ed_evaluate(responses, references)
             res.update(ed_metrics)
+            if args.label_map is not None:
+                res["by_dataset"] = ed_evaluate_by_dataset(responses, dataset.raw, load_label_map(args.label_map))
         
             eval_dir = os.path.join(args.save, "eval", str(epoch))
             print_rank(eval_dir)

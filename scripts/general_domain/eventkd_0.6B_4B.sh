@@ -16,16 +16,17 @@ DISTRIBUTED_ARGS="--nproc_per_node $GPUS_PER_NODE \
                   --master_port $MASTER_PORT"
 
 # model
-VERSION=${1:-v1}
+# DATA: folder under data/general_domain (ee_v1, ee_v2, ee_arg_v1, ee_arg_v2)
+DATA=${1:-ee_v1}
 # LoRA dir of the SFT teacher, e.g. results/qwen3/general_domain/sft_4B_ee_v1/<run>/<step>
-TEACHER_PEFT=${2:?"usage: bash $0 <v1 or v2> <teacher_lora_dir>"}
+TEACHER_PEFT=${2:?"usage: bash $0 <data folder> <teacher_lora_dir>"}
 BASE_PATH=.
 CKPT_NAME="qwen3-0.6B"
 CKPT="Qwen/Qwen3-0.6B"
 TEACHER_CKPT_NAME="qwen3-4B"
 TEACHER_CKPT="Qwen/Qwen3-4B-Instruct-2507"
 # data
-DATA_DIR="${BASE_PATH}/processed_data/general_domain/ee_${VERSION}/qwen/"
+DATA_DIR="${BASE_PATH}/processed_data/general_domain/${DATA}/qwen/"
 # hp
 BATCH_SIZE=2
 LR=0.0001
@@ -35,7 +36,7 @@ EPOCHS=5
 # length
 MAX_LENGTH=768
 # runtime
-SAVE_PATH="${BASE_PATH}/results/qwen3/general_domain/eventkd_0.6B_4B_ee_${VERSION}"
+SAVE_PATH="${BASE_PATH}/results/qwen3/general_domain/eventkd_0.6B_4B_${DATA}"
 # seed
 SEED=42
 
@@ -55,6 +56,9 @@ OPTS+=" --n-gpu ${GPUS_PER_NODE}"
 OPTS+=" --data-dir ${DATA_DIR}"
 OPTS+=" --num-workers 1"
 OPTS+=" --dev-num -1"
+# score each source dataset in its own labels; sample datasets with temperature 2
+OPTS+=" --label-map ${BASE_PATH}/data/general_domain/ee_label_map.tsv"
+OPTS+=" --sample-alpha 0.5"
 # hp
 OPTS+=" --lr ${LR}"
 OPTS+=" --batch-size ${BATCH_SIZE}"
@@ -86,7 +90,6 @@ OPTS+=" --deepspeed_config ${BASE_PATH}/configs/deepspeed/ds_config_bf16.json"
 # type
 OPTS+=" --type sfkl"
 # gen
-OPTS+=" --do-sample"
 OPTS+=" --top-k 0"
 OPTS+=" --top-p 0.95"
 OPTS+=" --temperature 0.5"

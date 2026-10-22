@@ -59,16 +59,16 @@ class LMTrainDataset(Dataset):
                 values_to_find.append(event[0])  # 1. trigger
                 values_to_find.append(event[1])  # 2. event_type
                 
-                if len(event) > 3:
+                if len(event) > 2 and isinstance(event[2], list):
                     for arg in event[2]:             # 3. Duyệt qua các arguments
                         values_to_find.append(arg[0])  # arg_span
                         values_to_find.append(arg[1])  # arg_role
-                    
-                    values_to_find.append(event[3])  # 4. description
 
-                elif len(event) == 3:
+                if len(event) > 3:
+                    values_to_find.append(event[3])  # 4. description
+                elif len(event) == 3 and not isinstance(event[2], list):
                     values_to_find.append(event[2])  # 3. description
-                # general_domain rows are [trigger, type] only
+                # general_domain rows have no description: [trigger, type] or [trigger, type, arguments]
 
             result_tuples = []
             # search_start_idx = len(full_text) - len(response_str)
@@ -300,3 +300,34 @@ class LMEvalDataset(Dataset):
             self._process_lm(i, samp, model_data, no_model_data, gen_data)
         
         return model_data, no_model_data, gen_data
+
+
+class TemperatureSampler(torch.utils.data.Sampler):
+    """Temperature sampling over source datasets without growing the train file.
+
+    Each epoch draws len(dataset) row indices with replacement; a row of source dataset d has weight
+    n_d**alpha / n_d, so d gets a share of the epoch prop. to n_d**alpha (alpha=0.5 is temperature 2,
+    T5 / BERT-and-PALs). The draw is split across ranks like DistributedSampler with drop_last=True.
+    """
+
+    def __init__(self, dataset, alpha, rank, num_replicas, seed=0):
+        names = [r["dataset"] for r in dataset.raw[:len(dataset)]]
+        sizes = {d: names.count(d) for d in set(names)}
+        self.weights = torch.tensor([sizes[d] ** alpha / sizes[d] for d in names], dtype=torch.double)
+        self.num_samples = len(names) // num_replicas
+        self.rank, self.num_replicas, self.seed, self.epoch = rank, num_replicas, seed, 0
+        total = sum(n ** alpha for n in sizes.values())
+        print_rank("TemperatureSampler alpha={}: ".format(alpha) + ", ".join(
+            f"{d} {n} rows -> {n ** alpha / total:.1%} of an epoch" for d, n in sorted(sizes.items())))
+
+    def set_epoch(self, epoch):
+        self.epoch = epoch
+
+    def __iter__(self):
+        g = torch.Generator()
+        g.manual_seed(self.seed + self.epoch)
+        idx = torch.multinomial(self.weights, self.num_samples * self.num_replicas, replacement=True, generator=g)
+        return iter(idx[self.rank::self.num_replicas].tolist())
+
+    def __len__(self):
+        return self.num_samples
