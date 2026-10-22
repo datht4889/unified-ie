@@ -247,3 +247,17 @@ def ed_evaluate_by_dataset(pred_list, rows, label_map):
     if has_args:
         out["macro_argument_f1"] = sum(out[ds]["argument"]["f1"] for ds in has_args) / len(has_args)
     return out
+
+def format_by_dataset(by_dataset, split, epoch):
+    """One log line per dataset plus the macro averages, for reading results straight off log.txt."""
+    lines = []
+    for ds, m in by_dataset.items():
+        if not isinstance(m, dict):
+            continue
+        parts = [f"{k} P {100 * m[k]['precision']:.2f} R {100 * m[k]['recall']:.2f} F1 {100 * m[k]['f1']:.2f}"
+                 for k in ("trigger", "trigger_id", "argument") if k in m]
+        lines.append(f"RESULT {split} epoch {epoch} | {ds:7s} | " + " | ".join(parts))
+    macro = f"RESULT {split} epoch {epoch} | macro   | trigger F1 {100 * by_dataset['macro_trigger_f1']:.2f}"
+    if "macro_argument_f1" in by_dataset:
+        macro += f" | argument F1 {100 * by_dataset['macro_argument_f1']:.2f}"
+    return "\n".join(lines + [macro])

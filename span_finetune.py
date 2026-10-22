@@ -44,7 +44,7 @@ from distillm import SampleGenerator, ReplayBuffer
 from rouge_metric import compute_metrics
 
 from peft import PeftModel
-from ed_eval import ed_evaluate, ed_evaluate_by_dataset, load_label_map
+from ed_eval import ed_evaluate, ed_evaluate_by_dataset, load_label_map, format_by_dataset
 
 torch.set_num_threads(4)
 
@@ -780,6 +780,9 @@ def evaluate(args, tokenizer, model, dataset: LMTrainDataset, split, epoch, devi
             res.update(ed_metrics)
             if args.label_map is not None:
                 res["by_dataset"] = ed_evaluate_by_dataset(responses, dataset.raw, load_label_map(args.label_map))
+                summary = format_by_dataset(res["by_dataset"], split, epoch)
+                print_rank(summary)
+                save_rank(summary, os.path.join(args.save, "log.txt"))
         
             eval_dir = os.path.join(args.save, "eval", str(epoch))
             print_rank(eval_dir)
