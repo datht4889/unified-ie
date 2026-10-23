@@ -21,11 +21,11 @@ CKPT="Qwen/Qwen3-4B-Instruct-2507"
 [ -d models/Qwen3-4B-Instruct-2507 ] && CKPT="models/Qwen3-4B-Instruct-2507"   # local copy from download.txt
 # data
 DATA_DIR="${BASE_PATH}/processed_data/general_domain/${DATA}/qwen/"
-# hp: one GPU, so GRAD_ACC 16 keeps the effective batch of 32 (2 x 8 x 2 GPUs before)
-BATCH_SIZE=2
+# hp: one 80GB GPU (B200): micro-batch 8 x GRAD_ACC 4 = effective batch 32, as 2 x 8 x 2 GPUs before
+BATCH_SIZE=8
 LR=0.0001
-GRAD_ACC=16
-EVAL_BATCH_SIZE=32
+GRAD_ACC=4
+EVAL_BATCH_SIZE=64
 EPOCHS=3
 # length
 MAX_LENGTH=768
