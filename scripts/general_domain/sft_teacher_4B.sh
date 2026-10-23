@@ -21,6 +21,7 @@ DATA=${1:-ee_v1}
 BASE_PATH=.
 CKPT_NAME="qwen3-4B"
 CKPT="Qwen/Qwen3-4B-Instruct-2507"
+[ -d models/Qwen3-4B-Instruct-2507 ] && CKPT="models/Qwen3-4B-Instruct-2507"   # local copy from download.txt
 # data
 DATA_DIR="${BASE_PATH}/processed_data/general_domain/${DATA}/qwen/"
 # hp

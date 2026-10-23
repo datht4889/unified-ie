@@ -23,8 +23,10 @@ TEACHER_PEFT=${2:?"usage: bash $0 <data folder> <teacher_lora_dir>"}
 BASE_PATH=.
 CKPT_NAME="qwen3-0.6B"
 CKPT="Qwen/Qwen3-0.6B"
+[ -d models/Qwen3-0.6B ] && CKPT="models/Qwen3-0.6B"   # local copy from download.txt
 TEACHER_CKPT_NAME="qwen3-4B"
 TEACHER_CKPT="Qwen/Qwen3-4B-Instruct-2507"
+[ -d models/Qwen3-4B-Instruct-2507 ] && TEACHER_CKPT="models/Qwen3-4B-Instruct-2507"
 # data
 DATA_DIR="${BASE_PATH}/processed_data/general_domain/${DATA}/qwen/"
 # hp

@@ -28,6 +28,7 @@ ALPHA=${2:-}
 BASE_PATH=.
 CKPT_NAME="qwen3-0.6B"
 CKPT="Qwen/Qwen3-0.6B"
+[ -d models/Qwen3-0.6B ] && CKPT="models/Qwen3-0.6B"   # local copy from download.txt
 # data
 DATA_DIR="${BASE_PATH}/processed_data/general_domain/${DATA}/qwen/"
 # hp
