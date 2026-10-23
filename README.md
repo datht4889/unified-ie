@@ -38,7 +38,13 @@ Swap `ee_v1` for `ee_v2`, `ee_arg_v1` or `ee_arg_v2`.
 
 Things that differ from the original EventKD scripts:
 
-- `--sample-alpha 0.5`: rows of dataset d are drawn with probability prop. to n_d^0.5 (temperature 2, as in T5 and BERT-and-PALs). An epoch is still one pass worth of rows, so MAVEN (70% of the rows) gets about 48% of the steps and GENEVA goes from 5% to 13%.
-- `--label-map`: dev/test are also scored per dataset in its own labels (`by_dataset` in the log). A predicted label the row's dataset doesn't use is dropped, and RAMS is scored on its 38 level-2 types. Pick the checkpoint on `by_dataset.macro_trigger_f1` of dev.
+- `--label-map`: dev/test are also scored per dataset in its own labels. A predicted label the row's dataset doesn't use is dropped, and RAMS is scored on its 38 level-2 types. `grep RESULT log.txt` gives one line per dataset and split.
+- `--eval-gen-mode best`: dev answers after every epoch, test answers only when the dev score (mean of per-dataset trigger F1) beats the best so far, marked by a `BEST` line. `every` keeps the old schedule.
 - Decoding is greedy (no `--do-sample`). `do_sample` is passed straight to `generate()`, because transformers otherwise fills it from Qwen3's `generation_config.json`, which samples.
 - `process_data.py` drops train/dev rows longer than `--max-prompt-length` / `--max-length` instead of cutting them (10 train rows, 1 dev row). Test rows are never dropped.
+
+Speed (same losses, ported from `new_nothing/OpenED`):
+
+- The student and teacher forwards compute logits only over the label window (`logits_to_keep`), the only positions CE and KD read. On ED rows that's about 33 of 768 columns, so the LM head and the KL work shrink by about 20x. Checked on CPU: CE and SFKL match the full computation to 6 decimals.
+- `--dynamic-pad` pads each batch to its longest row (rounded up to 64) instead of 768. It's on for teacher SFT. It stays off while the span loss runs, because the span token weights average over every query row, padding included, so they'd change with the pad width.
+- `--gen-backend vllm` generates dev/test answers in vLLM (`gen_backend.py`, `tools/vllm_generate.py`, from `new_nothing`). It needs its own environment (`uv venv .venv-vllm --python 3.12 && uv pip install --python .venv-vllm vllm==0.27.1`, or `VLLM_PY=...`) and a single process (world size 1). Answers are statistically equivalent to `generate()`, not token-identical.

@@ -151,10 +151,23 @@ class LMTrainDataset(Dataset):
 
         return model_data, no_model_data, gen_data
 
+    def batch_width(self, samples):
+        """Columns of the model inputs: --max-length, or with dynamic padding the longest row of the
+        batch rounded up to a multiple of 64 (at most --max-length). Rows are right padded and attention
+        is causal, so a row's logits do not depend on its padding. From new_nothing/OpenED."""
+        if not getattr(self.args, "dynamic_pad_effective", False):
+            return self.max_length
+        need = 1
+        for sample in samples:
+            ids = sample["input_ids"]
+            n = len(ids) - 1 if (4294967295 in ids or 65535 in ids) else len(ids)
+            need = max(need, min(n, self.max_length) - 1)
+        return min(self.max_length, -(-need // 64) * 64)
+
     def collate(self, samples):
         bs = len(samples)
 
-        max_length = self.max_length
+        max_length = self.batch_width(samples)
         
         model_data = {
             "input_ids": torch.ones(bs, max_length, dtype=torch.long) * self.pad_id,
@@ -302,32 +315,13 @@ class LMEvalDataset(Dataset):
         return model_data, no_model_data, gen_data
 
 
-class TemperatureSampler(torch.utils.data.Sampler):
-    """Temperature sampling over source datasets without growing the train file.
 
-    Each epoch draws len(dataset) row indices with replacement; a row of source dataset d has weight
-    n_d**alpha / n_d, so d gets a share of the epoch prop. to n_d**alpha (alpha=0.5 is temperature 2,
-    T5 / BERT-and-PALs). The draw is split across ranks like DistributedSampler with drop_last=True.
-    """
-
-    def __init__(self, dataset, alpha, rank, num_replicas, seed=0):
-        names = [r["dataset"] for r in dataset.raw[:len(dataset)]]
-        sizes = {d: names.count(d) for d in set(names)}
-        self.weights = torch.tensor([sizes[d] ** alpha / sizes[d] for d in names], dtype=torch.double)
-        self.num_samples = len(names) // num_replicas
-        self.rank, self.num_replicas, self.seed, self.epoch = rank, num_replicas, seed, 0
-        total = sum(n ** alpha for n in sizes.values())
-        print_rank("TemperatureSampler alpha={}: ".format(alpha) + ", ".join(
-            f"{d} {n} rows -> {n ** alpha / total:.1%} of an epoch" for d, n in sorted(sizes.items())))
-
-    def set_epoch(self, epoch):
-        self.epoch = epoch
-
-    def __iter__(self):
-        g = torch.Generator()
-        g.manual_seed(self.seed + self.epoch)
-        idx = torch.multinomial(self.weights, self.num_samples * self.num_replicas, replacement=True, generator=g)
-        return iter(idx[self.rank::self.num_replicas].tolist())
-
-    def __len__(self):
-        return self.num_samples
+def label_window(label):
+    """[start, end) over every column of `label` (rows x columns) that holds a label in some row.
+    CE and KD only read logits at labelled positions, so the forward can skip the LM head outside
+    this window (logits_to_keep). A batch with no label at all gets a 1-column window.
+    From new_nothing/OpenED/ced_losses.py."""
+    cols = (label != -100).any(dim=0).nonzero().flatten()
+    if cols.numel() == 0:
+        return 0, 1
+    return int(cols[0]), int(cols[-1]) + 1

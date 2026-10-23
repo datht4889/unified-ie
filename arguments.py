@@ -79,9 +79,15 @@ def add_data_args(parser: argparse.ArgumentParser):
     group.add_argument("--dev-ratio", type=float, default=1)
     group.add_argument("--label-map", type=str, default=None,
                        help="ee_label_map.tsv: score each source dataset in its own label scheme")
-    group.add_argument("--sample-alpha", type=float, default=None,
-                       help="draw train rows of dataset d with probability prop. to n_d**alpha (0.5 = temperature 2); "
-                            "one epoch stays len(train) rows")
+    group.add_argument("--dynamic-pad", action="store_true",
+                       help="pad each batch to its longest row (rounded up to 64) instead of --max-length; "
+                            "ignored with the span loss or --student-gen")
+    group.add_argument("--eval-gen-mode", type=str, default="every", choices=["every", "best"],
+                       help="every: dev and test answers at each evaluation (as before); best: dev answers at each "
+                            "evaluation, test answers only when the dev score improves")
+    group.add_argument("--gen-backend", choices=["hf", "vllm"], default="hf",
+                       help="hf: answers from model.generate(); vllm: from tools/vllm_generate.py in a separate vLLM "
+                            "environment (gen_backend.py), one process only")
     group.add_argument("--gen-num", type=int, default=-1)
     group.add_argument("--data-names", type=str, default=None)
     group.add_argument("--prompt-type", type=str, default=None)

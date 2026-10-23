@@ -49,9 +49,11 @@ OPTS+=" --n-gpu ${GPUS_PER_NODE}"
 OPTS+=" --data-dir ${DATA_DIR}"
 OPTS+=" --num-workers 0"
 OPTS+=" --dev-num -1"
-# score each source dataset in its own labels; sample datasets with temperature 2
+# score each source dataset in its own labels; dev answers every epoch, test answers when dev improves
 OPTS+=" --label-map ${BASE_PATH}/data/general_domain/ee_label_map.tsv"
-OPTS+=" --sample-alpha 0.5"
+OPTS+=" --eval-gen-mode best"
+# pad each batch to its longest row (the span loss in eventkd_0.6B_4B.sh keeps fixed padding)
+OPTS+=" --dynamic-pad"
 # hp
 OPTS+=" --lr ${LR}"
 OPTS+=" --batch-size ${BATCH_SIZE}"
