@@ -22,6 +22,7 @@ huggingface-cli download datht/unified-ie --repo-type dataset --local-dir data
 |---|---|---|
 | `ee_v1/`, `ee_v2/` | event detection: `{"events": [[trigger, type], ...]}` | ACE, MAVEN, RAMS, GENEVA |
 | `ee_arg_v1/`, `ee_arg_v2/` | event extraction with arguments: `[[trigger, type, [[argument, role], ...]], ...]` | ACE, GENEVA |
+| `re_tacred/`, `re_fewrel/` | sentence-level relation extraction, no entity pair given: `{"relations": [[subject, relation, object], ...]}` | TACRED, FewRel (labels not merged, one folder each) |
 
 v1 writes LDC labels as `level1.level2` (`conflict.attack`) and FrameNet labels as MAVEN does (`Hostile_encounter`). v2 writes every label (and role) in lowercase words (`conflict attack`, `hostile encounter`). Same rows, same order, only the label strings differ.
 
@@ -39,6 +40,13 @@ bash scripts/general_domain/eventkd_0.6B_4B.sh ee_v1 <teacher_lora_dir>
 ```
 
 Swap `ee_v1` for `ee_v2`, `ee_arg_v1` or `ee_arg_v2`.
+
+RE teachers (one per dataset; dev/test are scored per dataset on exact (subject, relation, object) triples, plus subject-object pairs):
+
+```bash
+bash scripts/general_domain/sft_teacher_4B_re.sh          # re_tacred, then re_fewrel
+bash scripts/general_domain/sft_teacher_4B_re.sh fewrel   # one of them
+```
 
 Student SFT baseline (Qwen3-0.6B, full fine-tuning, CE only):
 

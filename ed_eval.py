@@ -248,16 +248,44 @@ def ed_evaluate_by_dataset(pred_list, rows, label_map):
         out["macro_argument_f1"] = sum(out[ds]["argument"]["f1"] for ds in has_args) / len(has_args)
     return out
 
+def re_evaluate_by_dataset(pred_list, rows):
+    """Sentence-level relation extraction, per source dataset. Gold is the row's own response
+    ({"relations": [[subject, relation, object], ...]}); RE labels are not merged, so no mapping.
+    triple: (subject, relation, object) exact after lowercasing; pair: (subject, object) only."""
+    counts = defaultdict(lambda: {k: {"tp": 0, "fp": 0, "fn": 0} for k in ("triple", "pair")})
+
+    def triples(x):
+        out = set()
+        for z in safe_load(x).get("relations", []):
+            try:
+                out.add((normalize(z[0]), normalize(z[1]), normalize(z[2])))
+            except (TypeError, IndexError, AttributeError):
+                continue
+        return out
+
+    for pred_json, row in zip(pred_list, rows):
+        pred, gold = triples(pred_json), triples(row["response"])
+        c = counts[row["dataset"]]
+        update_counts(list(pred), list(gold), c["triple"])
+        update_counts(list({(h, t) for h, _, t in pred}), list({(h, t) for h, _, t in gold}), c["pair"])
+    out = {}
+    for ds, c in sorted(counts.items()):
+        out[ds] = {}
+        for k in ("triple", "pair"):
+            p, r, f1 = compute_f1(c[k])
+            out[ds][k] = {"precision": p, "recall": r, "f1": f1, "counts": dict(c[k])}
+    out["macro_triple_f1"] = sum(v["triple"]["f1"] for v in out.values()) / max(1, len(counts))
+    return out
+
 def format_by_dataset(by_dataset, split, epoch):
     """One log line per dataset plus the macro averages, for reading results straight off log.txt."""
     lines = []
     for ds, m in by_dataset.items():
         if not isinstance(m, dict):
             continue
-        parts = [f"{k} P {100 * m[k]['precision']:.2f} R {100 * m[k]['recall']:.2f} F1 {100 * m[k]['f1']:.2f}"
-                 for k in ("trigger", "trigger_id", "argument") if k in m]
+        parts = [f"{k} P {100 * v['precision']:.2f} R {100 * v['recall']:.2f} F1 {100 * v['f1']:.2f}"
+                 for k, v in m.items()]
         lines.append(f"RESULT {split} epoch {epoch} | {ds:7s} | " + " | ".join(parts))
-    macro = f"RESULT {split} epoch {epoch} | macro   | trigger F1 {100 * by_dataset['macro_trigger_f1']:.2f}"
-    if "macro_argument_f1" in by_dataset:
-        macro += f" | argument F1 {100 * by_dataset['macro_argument_f1']:.2f}"
-    return "\n".join(lines + [macro])
+    macro = " | ".join(f"{k[len('macro_'):].replace('_', ' ')} {100 * v:.2f}"
+                       for k, v in by_dataset.items() if k.startswith("macro_"))
+    return "\n".join(lines + [f"RESULT {split} epoch {epoch} | macro   | {macro}"])
