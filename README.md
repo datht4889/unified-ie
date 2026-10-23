@@ -8,7 +8,9 @@ The training code is EventKD: a Qwen3-0.6B student learns from a LoRA-tuned Qwen
 
 Data lives on Hugging Face (private dataset `datht/unified-ie`), not in git. `download.txt` lists every file and the
 two Qwen3 models in the same `--url` / `--hf` format as `new_nothing/OpenED` (`@PROJECT@` = the project folder);
-the scripts use `models/Qwen3-*` when it's there, else the Hub ids. Or pull the data by hand:
+the scripts use `models/Qwen3-*` when it's there, else the Hub ids. It also fetches `processed_data/general_domain/`,
+the four folders already tokenized (Qwen3 tokenizer, max prompt 460, max length 768, as `scripts/general_domain/process_data.sh`),
+so a GPU box only downloads and trains. Or pull everything by hand:
 
 ```bash
 huggingface-cli download datht/unified-ie --repo-type dataset --local-dir data
@@ -31,7 +33,7 @@ Each row carries `dataset` and `gold_eval` (gold in the dataset's own labels). `
 
 ```bash
 pip install -r requirements.txt   # same pins as new_nothing/OpenED (transformers 4.57.3, torch 2.9.1)
-bash scripts/general_domain/process_data.sh ee_v1                  # tokenize into processed_data/
+# processed_data/ (already tokenized) comes with download.txt; process_data.sh is only for rebuilding it
 bash scripts/general_domain/sft_teacher_4B.sh ee_v1                # LoRA SFT of the Qwen3-4B teacher
 bash scripts/general_domain/eventkd_0.6B_4B.sh ee_v1 <teacher_lora_dir>
 ```
