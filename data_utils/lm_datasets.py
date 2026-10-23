@@ -325,3 +325,73 @@ def label_window(label):
     if cols.numel() == 0:
         return 0, 1
     return int(cols[0]), int(cols[-1]) + 1
+
+
+def balanced_quota(names, alpha):
+    """Rows per epoch of each source dataset for --balance-alpha. Dataset d gets a share prop. to
+    n_d**alpha; the epoch is as long as that allows without repeating a row, so the dataset with the
+    largest share per row is used in full. alpha=1 gives every row once (a normal epoch)."""
+    sizes = {}
+    for d in names:
+        sizes[d] = sizes.get(d, 0) + 1
+    weight = {d: n ** alpha for d, n in sizes.items()}
+    total = sum(weight.values())
+    epoch_rows = min(n * total / weight[d] for d, n in sizes.items())
+    return {d: min(n, round(epoch_rows * weight[d] / total)) for d, n in sorted(sizes.items())}
+
+
+class BalancedSampler(torch.utils.data.Sampler):
+    """--balance-alpha: each epoch takes balanced_quota() rows from every source dataset, without
+    repeating a row inside the epoch. Each dataset is walked through a shuffled order, epoch after
+    epoch, so every row is used before any row is used again; when a dataset's pass runs out, the
+    next pass is reshuffled with the rows already taken this epoch moved to its end. The seed fixes
+    the order only, so every rank (and a rerun) gets the same rows. The epoch is shuffled and split
+    across ranks like DistributedSampler with drop_last=True."""
+
+    def __init__(self, dataset, alpha, rank, num_replicas, seed=0, log_dir=None):
+        names = [r["dataset"] for r in dataset.raw[:len(dataset)]]
+        self.groups = {}
+        for i, d in enumerate(names):
+            self.groups.setdefault(d, []).append(i)
+        self.quota = balanced_quota(names, alpha)
+        # trim the largest dataset so the epoch splits evenly over ranks: no taken row is left out
+        big = max(self.quota, key=self.quota.get)
+        self.quota[big] -= sum(self.quota.values()) % num_replicas
+        self.rank, self.num_replicas, self.seed, self.epoch = rank, num_replicas, seed, 0
+        self.num_samples = sum(self.quota.values()) // num_replicas
+        self.log_dir = log_dir
+        print_rank(f"BalancedSampler alpha={alpha}: rows per epoch " + ", ".join(
+            f"{d} {q}/{len(self.groups[d])}" for d, q in self.quota.items()) + f" (total {sum(self.quota.values())})")
+
+    def set_epoch(self, epoch):
+        self.epoch = epoch
+
+    def epoch_indices(self, epoch):
+        rng = random.Random(self.seed)
+        queue = {d: [] for d in self.quota}
+        for _ in range(epoch + 1):            # replay earlier epochs: the walk carries over
+            chosen = []
+            for d, q in self.quota.items():
+                take = queue[d][:q]
+                queue[d] = queue[d][q:]
+                if len(take) < q:
+                    order = self.groups[d][:]
+                    rng.shuffle(order)
+                    taken = set(take)
+                    order = [i for i in order if i not in taken] + [i for i in order if i in taken]
+                    need = q - len(take)
+                    take, queue[d] = take + order[:need], order[need:]
+                chosen += take
+            rng.shuffle(chosen)
+        return chosen[:self.num_samples * self.num_replicas]
+
+    def __iter__(self):
+        indices = self.epoch_indices(self.epoch)
+        if self.log_dir is not None and self.rank == 0:
+            os.makedirs(self.log_dir, exist_ok=True)
+            with open(os.path.join(self.log_dir, f"epoch_{self.epoch}_indices.json"), "w") as f:
+                json.dump(indices, f)
+        return iter(indices[self.rank::self.num_replicas])
+
+    def __len__(self):
+        return self.num_samples

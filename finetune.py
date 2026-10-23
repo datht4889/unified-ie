@@ -28,7 +28,7 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 
 from arguments import get_args
 
-from data_utils.lm_datasets import LMTrainDataset, label_window
+from data_utils.lm_datasets import LMTrainDataset, label_window, BalancedSampler, balanced_quota
 from data_utils.data_utils import LLMDataset
 from utils import get_optimizer_params, get_optimizer_params_peft, print_args, initialize
 from utils import print_rank, get_rank
@@ -254,7 +254,11 @@ def finetune(args, tokenizer: AutoTokenizer, model: deepspeed.DeepSpeedEngine, o
         dp_group = None
         loss_func = nn.CrossEntropyLoss()
 
-    sampler = DistributedSampler(dataset["train"], shuffle=True, drop_last=True, rank=dp_rank, num_replicas=dp_world_size)
+    if args.balance_alpha is not None:
+        sampler = BalancedSampler(dataset["train"], args.balance_alpha, rank=dp_rank, num_replicas=dp_world_size,
+                                  seed=args.seed, log_dir=os.path.join(args.save, "balanced_epochs"))
+    else:
+        sampler = DistributedSampler(dataset["train"], shuffle=True, drop_last=True, rank=dp_rank, num_replicas=dp_world_size)
     train_dataloader = DataLoader(
         dataset['train'], sampler=sampler, batch_size=args.batch_size, num_workers=args.num_workers, collate_fn=dataset["train"].collate)
     
@@ -489,7 +493,10 @@ def main():
     dp_world_size = dist.get_world_size()
     
     if args.do_train:
-        args.train_iters_per_epoch = int(len(dataset["train"]) / (args.batch_size * dp_world_size * args.gradient_accumulation_steps))
+        train_rows = len(dataset["train"])
+        if args.balance_alpha is not None:   # a balanced epoch is shorter than the train set
+            train_rows = sum(balanced_quota([r["dataset"] for r in dataset["train"].raw[:train_rows]], args.balance_alpha).values())
+        args.train_iters_per_epoch = int(train_rows / (args.batch_size * dp_world_size * args.gradient_accumulation_steps))
         print_rank("Train iters per epoch", args.train_iters_per_epoch)
         if args.total_iters is None:
             args.total_iters = args.train_iters_per_epoch * args.epochs

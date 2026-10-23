@@ -36,6 +36,15 @@ bash scripts/general_domain/eventkd_0.6B_4B.sh ee_v1 <teacher_lora_dir>
 
 Swap `ee_v1` for `ee_v2`, `ee_arg_v1` or `ee_arg_v2`.
 
+Student SFT baseline (Qwen3-0.6B, full fine-tuning, CE only):
+
+```bash
+bash scripts/general_domain/sft_student_0.6B.sh ee_v1          # every row once per epoch, 5 epochs
+bash scripts/general_domain/sft_student_0.6B.sh ee_v1 0.5      # square-root balancing, 13 epochs
+```
+
+`--balance-alpha a` (BalancedSampler) gives dataset d a share of every epoch prop. to n_d^a, with no row twice in an epoch. With a = 0.5 on ee_v* an epoch is GENEVA 1,872 (all) + ACE 2,402 + RAMS 3,456 + MAVEN 7,008 rows. Each dataset is walked through a shuffled order across epochs, so every row is used before any row is used again (after 13 epochs: MAVEN rows 3-4 times, RAMS 7-8, ACE 10-11, GENEVA 13). The seed only fixes the order. Each epoch's row list is saved to `balanced_epochs/epoch_<e>_indices.json`.
+
 Things that differ from the original EventKD scripts:
 
 - `--label-map`: dev/test are also scored per dataset in its own labels. A predicted label the row's dataset doesn't use is dropped, and RAMS is scored on its 38 level-2 types. `grep RESULT log.txt` gives one line per dataset and split.
