@@ -196,3 +196,4 @@ eval_outputs/
 processed_data/
 checkpoints/
 data/
+logs/
