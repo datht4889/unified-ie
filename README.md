@@ -41,11 +41,12 @@ bash scripts/general_domain/eventkd_0.6B_4B.sh ee_v1 <teacher_lora_dir>
 
 Swap `ee_v1` for `ee_v2`, `ee_arg_v1` or `ee_arg_v2`.
 
-RE teachers (one per dataset; dev/test are scored per dataset on exact (subject, relation, object) triples, plus subject-object pairs):
+RE, one model per dataset (dev/test are scored per dataset on exact (subject, relation, object) triples, plus subject-object pairs):
 
 ```bash
-bash scripts/general_domain/sft_teacher_4B_re.sh          # re_tacred, then re_fewrel
-bash scripts/general_domain/sft_teacher_4B_re.sh fewrel   # one of them
+bash scripts/general_domain/sft_teacher_4B_re.sh           # Qwen3-4B LoRA teacher: re_tacred, then re_fewrel
+bash scripts/general_domain/sft_student_0.6B_re.sh         # Qwen3-0.6B student SFT: re_tacred, then re_fewrel
+bash scripts/general_domain/sft_student_0.6B_re.sh fewrel  # one dataset
 ```
 
 Student SFT baseline (Qwen3-0.6B, full fine-tuning, CE only):
