@@ -1,5 +1,5 @@
 #! /bin/bash
-# SFT of the Qwen3-0.6B student (full fine-tuning, CE only) on event detection (ACE, MAVEN, RAMS, GENEVA; ee_v1 labels)
+# SFT of the Qwen3-0.6B student (full fine-tuning, CE only) on event extraction with arguments (ACE, MAVEN, RAMS, GENEVA; ee_v1 labels; MAVEN/RAMS have no arguments, their [] is not trained)
 # Standalone: GPU, data and hyperparameters are fixed here; started by run.sh.
 
 GPUS=(7)

@@ -1,5 +1,5 @@
 #! /bin/bash
-# LoRA SFT of the Qwen3-4B teacher on event detection (ACE, MAVEN, RAMS, GENEVA; ee_v1 labels)
+# LoRA SFT of the Qwen3-4B teacher on event extraction with arguments (ACE, MAVEN, RAMS, GENEVA; ee_v1 labels; MAVEN/RAMS have no arguments, their [] is not trained)
 # Standalone: GPU, data and hyperparameters are fixed here; started by run.sh.
 
 GPUS=(5)

@@ -3,12 +3,11 @@
 # after logout. One queue per GPU, so each GPU runs one job at a time, in this order:
 #   GPU 4  teacher NER
 #   GPU 5  teacher EE v1, teacher FewRel
-#   GPU 6  teacher EAE v1, teacher EE v2, student NER
-#   GPU 7  teacher TACRED, student TACRED, teacher EAE v2, student EAE v1, student EAE v2,
-#          student EE v1, student EE v2, student FewRel
+#   GPU 6  teacher EE v2, student NER
+#   GPU 7  teacher TACRED, student TACRED, student EE v1, student EE v2, student FewRel
 # The queues are balanced on rough cost (train rows x epochs, the 4B teacher about 5x the student).
-# EE = event detection on ACE/MAVEN/RAMS/GENEVA (ee_v1, ee_v2), EAE = events with arguments on ACE/GENEVA
-# (ee_arg_v1, ee_arg_v2), NER = CoNLL-2003 + OntoNotes (ner_v2), RE = TACRED, FewRel.
+# EE = events with arguments on ACE/MAVEN/RAMS/GENEVA (ee_v1, ee_v2; MAVEN/RAMS have no arguments, so the
+# loss skips their []), NER = CoNLL-2003 + OntoNotes (ner_v2), RE = TACRED, FewRel.
 # Console output: logs/<run>.log. Training log with the RESULT lines: results/qwen3/general_domain/sft_*/<settings>/log.txt
 cd "$(dirname "$0")"
 mkdir -p logs
@@ -24,7 +23,7 @@ if [ ! -f processed_data/general_domain/ner_v2/qwen/train_0.bin ]; then
     python -c "import zipfile; zipfile.ZipFile('processed_data.zip').extractall('.')" || exit 1
 fi
 
-for d in ee_v1 ee_v2 ee_arg_v1 ee_arg_v2 re_tacred re_fewrel ner_v2; do
+for d in ee_v1 ee_v2 re_tacred re_fewrel ner_v2; do
     if [ ! -f processed_data/general_domain/${d}/qwen/train_0.bin ]; then
         echo "missing processed_data/general_domain/${d}/qwen after unpacking processed_data.zip"
         exit 1
@@ -44,7 +43,7 @@ start () {  # $1 = queue name, then scripts (paths under scripts/general_domain/
 
 start gpu4 ner/sft_teacher_4B_ner
 start gpu5 ee/sft_teacher_4B_ee_v1 re/sft_teacher_4B_re_fewrel
-start gpu6 ee/sft_teacher_4B_eae_v1 ee/sft_teacher_4B_ee_v2 ner/sft_student_0.6B_ner
-start gpu7 re/sft_teacher_4B_re_tacred re/sft_student_0.6B_re_tacred ee/sft_teacher_4B_eae_v2     ee/sft_student_0.6B_eae_v1 ee/sft_student_0.6B_eae_v2 ee/sft_student_0.6B_ee_v1 ee/sft_student_0.6B_ee_v2     re/sft_student_0.6B_re_fewrel
+start gpu6 ee/sft_teacher_4B_ee_v2 ner/sft_student_0.6B_ner
+start gpu7 re/sft_teacher_4B_re_tacred re/sft_student_0.6B_re_tacred ee/sft_student_0.6B_ee_v1 ee/sft_student_0.6B_ee_v2     re/sft_student_0.6B_re_fewrel
 
 echo "follow: tail -f logs/*.log    results: grep -rh RESULT results/qwen3/general_domain --include=log.txt"
