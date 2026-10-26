@@ -1,6 +1,6 @@
 # Unified IE
 
-One generative model trained on several IE datasets at once: event extraction, relation extraction and NER. For now each task is trained on its own (teachers and student baselines). RE labels (TACRED, FewRel) aren't merged.
+One generative model trained on several IE datasets at once: event extraction, relation extraction and NER. For now there's one teacher per source dataset and one student per task (SFT baselines). RE labels (TACRED, FewRel) aren't merged.
 
 The training code is EventKD: a Qwen3-0.6B student learns from a LoRA-tuned Qwen3-4B teacher with CE + skewed forward KL + span-level representation distillation (`span_finetune.py`). No pseudo labels, no self-distillation.
 
@@ -8,7 +8,7 @@ The training code is EventKD: a Qwen3-0.6B student learns from a LoRA-tuned Qwen
 
 Data lives on Hugging Face (private dataset `datht/unified-ie`), not in git. For training, `download.txt` fetches only
 `processed_data.zip` (every tokenized folder under `processed_data/general_domain/` plus `data/general_domain/ee_label_map.tsv`
-and `ner_label_map.tsv`, 58 MB) and the two Qwen3 models into `models/`; `run.sh` unpacks the zip on its first run.
+and `ner_label_map.tsv`, 58 MB) and the two Qwen3 models into `models/`; `run.sh` unpacks the zip on its first run, and again whenever the unpacked EE data predates the argument format (no `unknown_args`); an old zip stops it with a message to fetch the zip again.
 The scripts use `models/Qwen3-*` when it's there, else the Hub ids. The untokenized rows (`general_domain/<folder>/*.jsonl`)
 stay on HF for rebuilding:
 
@@ -43,13 +43,13 @@ bash scripts/general_domain/eventkd_0.6B_4B.sh ee_v1 <teacher_lora_dir>
 
 Swap `ee_v1` for `ee_v2`.
 
-RE, one model per dataset, all four runs at once on GPUs 4-7 (one 80GB B200 each; effective batch 32 as before, from micro-batch 8 x 4 for the teacher and 16 x 2 for the student):
+Every SFT run at once on GPUs 4-7 (one 80GB B200 each; effective batch 32 as before, from micro-batch 8 x 4 for the teacher and 16 x 2 for the student):
 
 ```bash
 bash run.sh   # every teacher/student SFT run (EE v1/v2, NER, TACRED, FewRel), one queue per GPU 4-7
 ```
 
-`run.sh` runs 10 SFT jobs (the same Qwen3-4B teacher / Qwen3-0.6B student pair on ee_v1, ee_v2, ner_v2, re_tacred, re_fewrel), one queue per GPU so each GPU runs one job at a time; the queue order is in the header of `run.sh`. NER scripts pass `--max-prompt-length 480` and `--label-map data/general_domain/ner_label_map.tsv`.
+`run.sh` runs 17 SFT jobs: a Qwen3-4B LoRA teacher per source dataset (`script:dataset` passes the dataset, and `--datasets` keeps only its rows in train, dev and test: EE teachers on ace, maven, rams, geneva for both ee_v1 and ee_v2, NER on conll03 and ontonotes, plus TACRED and FewRel) and a Qwen3-0.6B student per task (ee_v1, ee_v2, ner_v2, re_tacred, re_fewrel). One queue per GPU, so each GPU runs one job at a time, on torchrun port 29500 + 10 x GPU; the queues are at the end of `run.sh`, and `run2.sh` restarts the GPU 7 queue alone. NER scripts pass `--max-prompt-length 480` and `--label-map data/general_domain/ner_label_map.tsv`.
 
 Each run is a standalone script in `scripts/general_domain/{ee,re,ner}/` with its GPU, data and hyperparameters fixed. Dev/test are scored per dataset on exact (subject, relation, object) triples, plus subject-object pairs. Console output goes to `logs/<run>.log`; `grep -rh RESULT results/qwen3/general_domain --include=log.txt` collects the scores.
 
